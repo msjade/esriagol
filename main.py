@@ -400,18 +400,27 @@ async def identify_attributes_only(
 
     where_final = apply_where_lock(client_rec, alias, "1=1")
 
+        # ✅ AGOL likes geometry as Esri JSON (more reliable than "x,y")
+    geometry_json = json.dumps({
+        "x": lon,
+        "y": lat,
+        "spatialReference": {"wkid": 4326}
+    })
+
     params = {
         "f": "json",
         "where": where_final,
-        "geometry": f"{lon},{lat}",
+        "geometry": geometry_json,
         "geometryType": "esriGeometryPoint",
         "inSR": "4326",
         "spatialRel": "esriSpatialRelIntersects",
         "outFields": ",".join(allowed),
         "returnGeometry": "false",
         "resultRecordCount": str(max_results),
+        "outSR": "4326",
         "token": token,
     }
+
 
     async with httpx.AsyncClient(timeout=60) as client:
         r = await client.get(qurl, params=params)
