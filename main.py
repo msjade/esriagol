@@ -440,19 +440,31 @@ async def vt_style(
         r = await client.get(style_url, params={"f": "json", "token": token})
         style = r.json()
 
-    # Rewrite tiles so every resource continues to pass key=...
-    key_q = key or ""
-    for src in style.get("sources", {}).values():
-        tiles = src.get("tiles")
-        if isinstance(tiles, list) and tiles:
-            src["tiles"] = [f"{PUBLIC_PROXY_BASE}/tiles/{alias}/tile/{{z}}/{{y}}/{{x}}.pbf?key={key_q}"]
+ # Rewrite sources (Esri styles may use "url": "../../" instead of "tiles": [...])
+key_q = key or ""
 
-    if "sprite" in style:
-        style["sprite"] = f"{PUBLIC_PROXY_BASE}/tiles/{alias}/sprite?key={key_q}"
-    if "glyphs" in style:
-        style["glyphs"] = f"{PUBLIC_PROXY_BASE}/tiles/{alias}/fonts/{{fontstack}}/{{range}}.pbf?key={key_q}"
+for src in style.get("sources", {}).values():
+    # If Esri gives a relative TileJSON URL, remove it and force explicit tiles
+    if "url" in src:
+        src.pop("url", None)
 
-    return style
+    # Force explicit tiles template for every vector source
+    if src.get("type") == "vector":
+        src["tiles"] = [
+            f"{PUBLIC_PROXY_BASE}/tiles/{alias}/tile/{{z}}/{{y}}/{{x}}.pbf?key={key_q}"
+        ]
+        src.setdefault("scheme", "xyz")
+        src.setdefault("minzoom", 0)
+        src.setdefault("maxzoom", 23)
+
+# Rewrite sprite and glyphs (OUTSIDE the loop)
+if "sprite" in style:
+    style["sprite"] = f"{PUBLIC_PROXY_BASE}/tiles/{alias}/sprite?key={key_q}"
+if "glyphs" in style:
+    style["glyphs"] = f"{PUBLIC_PROXY_BASE}/tiles/{alias}/fonts/{{fontstack}}/{{range}}.pbf?key={key_q}"
+
+return style
+
 
 
 @app.get("/tiles/{alias}/tile/{z}/{y}/{x}.pbf")
