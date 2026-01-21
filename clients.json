@@ -1,0 +1,13 @@
+{
+  "clients": {
+    "CLIENTKEY_DEMO_123": {
+      "name": "Demo Client",
+      "services": [
+        "ipa_bld_sample_v1",
+        "ipa_ea_frame_v1"
+      ],
+      "disabled": false,
+      "where_lock": {}
+    }
+  }
+}

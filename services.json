@@ -1,0 +1,36 @@
+{
+  "auth": {
+    "type": "generateToken",
+    "portal": "https://www.arcgis.com",
+    "username_env": "AGOL_USERNAME",
+    "password_env": "AGOL_PASSWORD",
+    "referer": "https://your-domain.com"
+  },
+  "services": {
+    "ipa_bld_sample_v1": {
+      "feature_layer_query_url": "https://services.arcgis.com/GTzCPGFFClrjWVDX/arcgis/rest/services/IPABLD/FeatureServer/0/query",
+      "vector_tile_base": "https://vectortileservices.arcgis.com/GTzCPGFFClrjWVDX/arcgis/rest/services/IPA/VectorTileServer",
+      "allowed_out_fields": [
+        "BLD_ID",
+        "STATE_NAME",
+        "LGA_NAME",
+        "WARD_NAME",
+        "NAT_EA_SN",
+        "HOUSEHOLD_COUNT"
+      ]
+    },
+    "ipa_ea_frame_v1": {
+      "feature_layer_query_url": "https://services.arcgis.com/GTzCPGFFClrjWVDX/arcgis/rest/services/IPAea_gdb/FeatureServer/0/query",
+      "vector_tile_base": "https://vectortileservices.arcgis.com/GTzCPGFFClrjWVDX/arcgis/rest/services/IPA_gdb/VectorTileServer",
+      "allowed_out_fields": [
+        "STATE_NAME",
+        "LGA_NAME",
+        "WARD_NAME",
+        "EA_ID",
+        "LOC_NAME",
+        "NAT_EA_SN",
+        "EA_NAME"
+      ]
+    }
+  }
+}
