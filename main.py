@@ -4,6 +4,7 @@ from typing import Dict, Any, Optional, List
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Header, Response
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 APP_TITLE = "AGOL Secure Overlay + Attributes Proxy"
 
@@ -188,6 +189,15 @@ def apply_where_lock(client_rec: Dict[str, Any], alias: str, where: str) -> str:
 
 
 app = FastAPI(title=APP_TITLE)
+
+# ✅ CORS so your HTML/JS apps can call /identify and /query
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],           # tighten later to specific client domains if you want
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")
