@@ -407,6 +407,13 @@ async def identify_attributes_only(
         "spatialReference": {"wkid": 4326}
     })
 
+        # Use Esri JSON geometry (fine) OR keep x,y; either works with this approach
+    geometry_json = json.dumps({
+        "x": lon,
+        "y": lat,
+        "spatialReference": {"wkid": 4326}
+    })
+
     params = {
         "f": "json",
         "where": where_final,
@@ -414,12 +421,30 @@ async def identify_attributes_only(
         "geometryType": "esriGeometryPoint",
         "inSR": "4326",
         "spatialRel": "esriSpatialRelIntersects",
-        "outFields": ",".join(allowed),
-        "returnGeometry": "false",
+        "outFields": "*",                 # ✅ request all fields from AGOL
+        "returnGeometry": "false",        # ✅ still no geometry
         "resultRecordCount": str(max_results),
         "outSR": "4326",
         "token": token,
     }
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        r = await client.get(qurl, params=params)
+        j = r.json()
+
+    if "error" in j:
+        return JSONResponse(status_code=400, content=j)
+
+    feats = j.get("features", [])
+    cleaned = []
+    for f in feats:
+        attrs = (f.get("attributes") or {})
+        # ✅ filter attributes to allowed list (server-side)
+        safe_attrs = {k: attrs.get(k) for k in allowed if k in attrs}
+        cleaned.append({"attributes": safe_attrs})
+
+    return {"count": len(cleaned), "results": cleaned}
+
 
 
     async with httpx.AsyncClient(timeout=60) as client:
