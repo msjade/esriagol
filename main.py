@@ -111,6 +111,7 @@ class TokenCache:
     def valid(self) -> bool:
         return bool(self.token) and time.time() < (self.expires_at - 60)
 
+
 TOKEN_CACHE = TokenCache()
 
 
@@ -142,7 +143,7 @@ async def get_agol_token(cfg: Dict[str, Any]) -> str:
         "password": password,
         "client": "referer",
         "referer": referer,
-        "expiration": "60"
+        "expiration": "60",
     }
 
     async with httpx.AsyncClient(timeout=30) as client:
@@ -189,6 +190,11 @@ def apply_where_lock(client_rec: Dict[str, Any], alias: str, where: str) -> str:
 app = FastAPI(title=APP_TITLE)
 
 
+@app.get("/")
+def home():
+    return {"ok": True, "message": "AGOL proxy running. Try /health"}
+
+
 @app.get("/health")
 def health():
     return {"ok": True, "service": APP_TITLE}
@@ -229,7 +235,7 @@ def admin_register_service(
     cfg["services"][alias] = {
         "feature_layer_query_url": feature_layer_query_url,
         "vector_tile_base": vector_tile_base,
-        "allowed_out_fields": fields
+        "allowed_out_fields": fields,
     }
     write_json_atomic(SERVICES_CONFIG, cfg)
     return {"ok": True, "alias": alias, "fields_count": len(fields)}
@@ -264,7 +270,7 @@ def admin_create_client(
         "name": name,
         "services": svc_list,
         "disabled": bool(disabled),
-        "where_lock": {}
+        "where_lock": {},
     }
     write_json_atomic(CLIENTS_CONFIG, cfg)
     return {"ok": True, "client_key": new_key, "name": name, "services": svc_list}
@@ -289,7 +295,6 @@ def admin_disable_client(
 
 @app.get("/v1/services")
 def list_services(x_api_key: Optional[str] = Header(default=None), key: Optional[str] = Query(default=None)):
-    # List only what this key is allowed to see
     client_key = (x_api_key or key or "").strip()
     if not client_key:
         raise HTTPException(401, "Unauthorized: missing key")
@@ -345,7 +350,7 @@ async def query_attributes_only(
         "resultOffset": str(resultOffset),
         "resultRecordCount": str(resultRecordCount),
         "returnDistinctValues": "true" if returnDistinctValues else "false",
-        "token": token
+        "token": token,
     }
     if orderByFields:
         params["orderByFields"] = orderByFields
@@ -395,7 +400,7 @@ async def identify_attributes_only(
         "outFields": ",".join(allowed),
         "returnGeometry": "false",
         "resultRecordCount": str(max_results),
-        "token": token
+        "token": token,
     }
 
     async with httpx.AsyncClient(timeout=60) as client:
@@ -440,31 +445,31 @@ async def vt_style(
         r = await client.get(style_url, params={"f": "json", "token": token})
         style = r.json()
 
- # Rewrite sources (Esri styles may use "url": "../../" instead of "tiles": [...])
-key_q = key or ""
+    # IMPORTANT: sprite URL cannot safely use ?key= because clients append .json/.png
+    key_q = (key or x_api_key or "").strip()
 
-for src in style.get("sources", {}).values():
-    # If Esri gives a relative TileJSON URL, remove it and force explicit tiles
-    if "url" in src:
-        src.pop("url", None)
+    # Rewrite sources: Esri styles may use "url": "../../" rather than "tiles"
+    for src in style.get("sources", {}).values():
+        if "url" in src:
+            src.pop("url", None)
 
-    # Force explicit tiles template for every vector source
-    if src.get("type") == "vector":
-        src["tiles"] = [
-            f"{PUBLIC_PROXY_BASE}/tiles/{alias}/tile/{{z}}/{{y}}/{{x}}.pbf?key={key_q}"
-        ]
-        src.setdefault("scheme", "xyz")
-        src.setdefault("minzoom", 0)
-        src.setdefault("maxzoom", 23)
+        if src.get("type") == "vector":
+            src["tiles"] = [
+                f"{PUBLIC_PROXY_BASE}/tiles/{alias}/tile/{{z}}/{{y}}/{{x}}.pbf?key={key_q}"
+            ]
+            src.setdefault("scheme", "xyz")
+            src.setdefault("minzoom", 0)
+            src.setdefault("maxzoom", 23)
 
-# Rewrite sprite and glyphs (OUTSIDE the loop)
-if "sprite" in style:
-    style["sprite"] = f"{PUBLIC_PROXY_BASE}/tiles/{alias}/sprite?key={key_q}"
-if "glyphs" in style:
-    style["glyphs"] = f"{PUBLIC_PROXY_BASE}/tiles/{alias}/fonts/{{fontstack}}/{{range}}.pbf?key={key_q}"
+    # Rewrite sprite base (NO querystring here)
+    if "sprite" in style:
+        style["sprite"] = f"{PUBLIC_PROXY_BASE}/tiles/{alias}/sprite/{key_q}"
 
-return style
+    # Glyphs template is safe with querystring
+    if "glyphs" in style:
+        style["glyphs"] = f"{PUBLIC_PROXY_BASE}/tiles/{alias}/fonts/{{fontstack}}/{{range}}.pbf?key={key_q}"
 
+    return style
 
 
 @app.get("/tiles/{alias}/tile/{z}/{y}/{x}.pbf")
@@ -498,13 +503,13 @@ async def vt_tile(
         return Response(content=r.content, media_type="application/x-protobuf")
 
 
-@app.get("/tiles/{alias}/sprite.json")
+# ---- Sprites (key is in PATH, because sprite url cannot use querystring reliably) ----
+@app.get("/tiles/{alias}/sprite/{client_key}.json")
 async def vt_sprite_json(
     alias: str,
-    x_api_key: Optional[str] = Header(default=None),
-    key: Optional[str] = Query(default=None),
+    client_key: str,
 ):
-    enforce_access(alias=alias, x_api_key=x_api_key, key=key)
+    enforce_access(alias=alias, x_api_key=None, key=client_key)
     cfg = load_services()
     svc = cfg.get("services", {}).get(alias)
     if not svc:
@@ -521,13 +526,12 @@ async def vt_sprite_json(
         return JSONResponse(content=r.json())
 
 
-@app.get("/tiles/{alias}/sprite.png")
+@app.get("/tiles/{alias}/sprite/{client_key}.png")
 async def vt_sprite_png(
     alias: str,
-    x_api_key: Optional[str] = Header(default=None),
-    key: Optional[str] = Query(default=None),
+    client_key: str,
 ):
-    enforce_access(alias=alias, x_api_key=x_api_key, key=key)
+    enforce_access(alias=alias, x_api_key=None, key=client_key)
     cfg = load_services()
     svc = cfg.get("services", {}).get(alias)
     if not svc:
@@ -544,13 +548,12 @@ async def vt_sprite_png(
         return Response(content=r.content, media_type="image/png")
 
 
-@app.get("/tiles/{alias}/sprite@2x.json")
+@app.get("/tiles/{alias}/sprite/{client_key}@2x.json")
 async def vt_sprite2x_json(
     alias: str,
-    x_api_key: Optional[str] = Header(default=None),
-    key: Optional[str] = Query(default=None),
+    client_key: str,
 ):
-    enforce_access(alias=alias, x_api_key=x_api_key, key=key)
+    enforce_access(alias=alias, x_api_key=None, key=client_key)
     cfg = load_services()
     svc = cfg.get("services", {}).get(alias)
     if not svc:
@@ -569,13 +572,12 @@ async def vt_sprite2x_json(
         return JSONResponse(content=r.json())
 
 
-@app.get("/tiles/{alias}/sprite@2x.png")
+@app.get("/tiles/{alias}/sprite/{client_key}@2x.png")
 async def vt_sprite2x_png(
     alias: str,
-    x_api_key: Optional[str] = Header(default=None),
-    key: Optional[str] = Query(default=None),
+    client_key: str,
 ):
-    enforce_access(alias=alias, x_api_key=x_api_key, key=key)
+    enforce_access(alias=alias, x_api_key=None, key=client_key)
     cfg = load_services()
     svc = cfg.get("services", {}).get(alias)
     if not svc:
