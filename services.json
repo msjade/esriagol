@@ -4,32 +4,38 @@
     "portal": "https://www.arcgis.com",
     "username_env": "AGOL_USERNAME",
     "password_env": "AGOL_PASSWORD",
-    "referer": "https://your-domain.com"
+    "referer": "https://www.arcgis.com"
   },
   "services": {
-    "ipa_bld_sample_v1": {
-      "feature_layer_query_url": "https://services.arcgis.com/GTzCPGFFClrjWVDX/arcgis/rest/services/IPABLD/FeatureServer/0/query",
-      "vector_tile_base": "https://vectortileservices.arcgis.com/GTzCPGFFClrjWVDX/arcgis/rest/services/IPA/VectorTileServer",
+    "ea_frame": {
+      "feature_layer_query_url": "https://services.arcgis.com/XXXXXXX/ArcGIS/rest/services/EA_FRAME/FeatureServer/0/query",
+      "vector_tile_base": "https://tiles.arcgis.com/tiles/XXXXXXX/arcgis/rest/services/EA_FRAME_VT/VectorTileServer",
       "allowed_out_fields": [
-        "BLD_ID",
+        "OBJECTID",
+        "NAT_EA_SN",
         "STATE_NAME",
         "LGA_NAME",
         "WARD_NAME",
-        "NAT_EA_SN",
-        "HOUSEHOLD_COUNT"
+        "EA_NAME",
+        "EA_ID",
+        "URBAN_RURAL",
+        "EST_POP"
       ]
     },
-    "ipa_ea_frame_v1": {
-      "feature_layer_query_url": "https://services.arcgis.com/GTzCPGFFClrjWVDX/arcgis/rest/services/IPAea_gdb/FeatureServer/0/query",
-      "vector_tile_base": "https://vectortileservices.arcgis.com/GTzCPGFFClrjWVDX/arcgis/rest/services/IPA_gdb/VectorTileServer",
+
+    "buildings": {
+      "feature_layer_query_url": "https://services.arcgis.com/XXXXXXX/ArcGIS/rest/services/BUILDINGS/FeatureServer/0/query",
+      "vector_tile_base": "https://tiles.arcgis.com/tiles/XXXXXXX/arcgis/rest/services/BUILDINGS_VT/VectorTileServer",
       "allowed_out_fields": [
+        "OBJECTID",
+        "BLD_ID",
+        "NAT_EA_SN",
         "STATE_NAME",
         "LGA_NAME",
         "WARD_NAME",
         "EA_ID",
-        "LOC_NAME",
-        "NAT_EA_SN",
-        "EA_NAME"
+        "BLD_USE",
+        "RES_STATUS"
       ]
     }
   }
