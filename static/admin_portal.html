@@ -1,0 +1,352 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>AGOL Secure Proxy — Admin Portal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <style>
+    :root { --bg:#0b0f19; --card:#101827; --muted:#9aa4b2; --line:#233044; --ok:#22c55e; --bad:#ef4444; }
+    html, body { height:100%; margin:0; font-family: system-ui, -apple-system, Segoe UI, Arial, sans-serif; background: linear-gradient(180deg,#0b0f19,#070a12); color:#e5e7eb;}
+    #app { display:grid; grid-template-columns: 420px 1fr; height:100vh; }
+    .left { padding:16px; overflow:auto; border-right: 1px solid var(--line); }
+    .right { position:relative; }
+    #map { width:100%; height:100%; }
+    .card { background: rgba(16,24,39,.92); border:1px solid var(--line); border-radius:16px; padding:14px; margin-bottom:14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+    .title { font-weight:800; font-size:16px; margin:0 0 8px 0; }
+    .sub { color:var(--muted); font-size:12px; margin-top:-4px; margin-bottom:10px;}
+    label { display:block; font-size:12px; color:var(--muted); margin:10px 0 6px; }
+    input, textarea, select, button{
+      width:100%; box-sizing:border-box; padding:10px 12px; border-radius:12px;
+      border:1px solid var(--line); background:#0b1220; color:#e5e7eb; outline:none;
+    }
+    textarea{ min-height:72px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .row2 { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    button{ cursor:pointer; border:1px solid #2b3b52; background: linear-gradient(180deg,#13213a,#0b1220); }
+    button:hover{ filter: brightness(1.05); }
+    .btnrow{ display:flex; gap:10px; }
+    .btnrow button{ width:50%; }
+    .pill{ display:inline-block; padding:4px 8px; border-radius:999px; border:1px solid var(--line); color:var(--muted); font-size:12px; margin-right:6px; }
+    .log{ white-space:pre-wrap; font-size:12px; background:#060b14; border:1px solid var(--line); border-radius:12px; padding:10px; max-height:220px; overflow:auto; }
+    .status{ font-size:12px; margin-top:10px; }
+    .ok{ color: var(--ok); }
+    .bad{ color: var(--bad); }
+    .topbar{
+      position:absolute; left:12px; top:12px; z-index:20;
+      background: rgba(16,24,39,.92); border:1px solid var(--line); border-radius:999px;
+      padding:10px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.25);
+      display:flex; gap:10px; align-items:center;
+    }
+    .topbar span{ color:var(--muted); font-size:12px; }
+    .mini{ width: 260px; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div class="left">
+    <div class="card">
+      <div class="title">AGOL Secure Proxy — Admin</div>
+      <div class="sub">
+        <span class="pill">Register Alias</span>
+        <span class="pill">Create Client Key</span>
+        <span class="pill">Test Overlay + Identify</span>
+      </div>
+
+      <label>Proxy Base URL</label>
+      <input id="proxy" value="https://esriagol.onrender.com" />
+
+      <label>Admin Key (x-admin-key)</label>
+      <input id="adminKey" type="password" placeholder="Enter ADMIN_KEY (not shared with clients)" />
+
+      <div class="btnrow" style="margin-top:10px;">
+        <button id="btnPing">Test Admin Access</button>
+        <button id="btnList">List Services</button>
+      </div>
+
+      <div class="status" id="adminStatus"></div>
+    </div>
+
+    <div class="card">
+      <div class="title">1) Register Service Alias</div>
+      <div class="sub">Creates a new dataset alias (FeatureServer query + VectorTileServer). Admin only.</div>
+
+      <label>Alias (unique)</label>
+      <input id="alias" placeholder="e.g. ea_clienta_v1" />
+
+      <label>Feature layer Query URL (must end with /query)</label>
+      <input id="flQuery" placeholder="https://.../FeatureServer/0/query" />
+
+      <label>Vector Tile Server Base (must end with /VectorTileServer)</label>
+      <input id="vtBase" placeholder="https://.../VectorTileServer" />
+
+      <label>Allowed Out Fields (comma-separated)</label>
+      <textarea id="fields" placeholder="STATE_NAME,LGA_NAME,WARD_NAME,EA_ID,LOC_NAME,NAT_EA_SN,EA_NAME"></textarea>
+
+      <button id="btnRegister" style="margin-top:10px;">Register Alias</button>
+      <div class="status" id="regStatus"></div>
+    </div>
+
+    <div class="card">
+      <div class="title">2) Create Client Key</div>
+      <div class="sub">Issue a client key tied to one or more aliases.</div>
+
+      <label>Client Name</label>
+      <input id="clientName" placeholder="e.g. UNFPA" />
+
+      <label>Allowed Services (aliases, comma-separated)</label>
+      <input id="clientServices" placeholder="e.g. ea_clienta_v1, bld_clienta_v1" />
+
+      <button id="btnCreateClient" style="margin-top:10px;">Create Client Key</button>
+      <div class="status" id="clientStatus"></div>
+
+      <label>Generated Client Key</label>
+      <input id="clientKeyOut" readonly placeholder="Client key will appear here..." />
+    </div>
+
+    <div class="card">
+      <div class="title">3) Test Overlay + Identify</div>
+      <div class="sub">Load style.json on the map, then click to identify attributes-only.</div>
+
+      <div class="row2">
+        <div>
+          <label>Test Alias</label>
+          <input id="testAlias" placeholder="e.g. ea_clienta_v1" />
+        </div>
+        <div>
+          <label>Client Key</label>
+          <input id="testClientKey" placeholder="e.g. CK_xxxxx" />
+        </div>
+      </div>
+
+      <div class="btnrow" style="margin-top:10px;">
+        <button id="btnLoadStyle">Load Overlay</button>
+        <button id="btnOpenStyle">Open style.json</button>
+      </div>
+
+      <label>Identify Result (click map)</label>
+      <div class="log" id="identifyLog">Click on the map after loading overlay…</div>
+    </div>
+
+    <div class="card">
+      <div class="title">Logs</div>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="topbar">
+      <span>Map</span>
+      <input class="mini" id="center" value="8.67,9.08" />
+      <input style="width:90px" id="zoom" value="6" />
+      <button id="btnFly" style="width:110px">Fly</button>
+    </div>
+    <div id="map"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+  let map = null;
+
+  const $ = (id) => document.getElementById(id);
+  const log = (msg) => {
+    const el = $("log");
+    el.textContent = (new Date().toISOString()) + "  " + msg + "\n" + el.textContent;
+  };
+  const base = () => $("proxy").value.trim().replace(/\/$/,'');
+  const adminKey = () => $("adminKey").value.trim();
+
+  function adminHeaders(){
+    const k = adminKey();
+    return k ? {"x-admin-key": k} : {};
+  }
+
+  async function fetchJson(url, opts={}){
+    const r = await fetch(url, opts);
+    const t = await r.text();
+    let j = null;
+    try { j = JSON.parse(t); } catch { j = { raw: t }; }
+    if(!r.ok) throw { status: r.status, body: j };
+    return j;
+  }
+
+  async function testAdminAccess(){
+    $("adminStatus").textContent = "Testing…";
+    $("adminStatus").className = "status";
+    try{
+      const url = `${base()}/admin/services`;
+      const j = await fetchJson(url, { headers: adminHeaders() });
+      $("adminStatus").textContent = "Admin access OK ✅";
+      $("adminStatus").className = "status ok";
+      log("Admin OK: /admin/services reachable");
+      return j;
+    }catch(e){
+      $("adminStatus").textContent = "Admin access FAILED ❌ (check ADMIN_KEY + redeploy)";
+      $("adminStatus").className = "status bad";
+      log("Admin FAILED: " + JSON.stringify(e));
+      throw e;
+    }
+  }
+
+  async function listServices(){
+    try{
+      const url = `${base()}/admin/services`;
+      const j = await fetchJson(url, { headers: adminHeaders() });
+      log("Services: " + JSON.stringify(j, null, 2));
+    }catch(e){
+      log("List services error: " + JSON.stringify(e));
+      alert("List services failed. Check ADMIN_KEY.");
+    }
+  }
+
+  async function registerAlias(){
+    $("regStatus").textContent = "Registering…";
+    $("regStatus").className = "status";
+
+    const alias = $("alias").value.trim();
+    const feature_layer_query_url = $("flQuery").value.trim();
+    const vector_tile_base = $("vtBase").value.trim();
+    const allowed_out_fields = $("fields").value.trim();
+
+    const url = new URL(`${base()}/admin/register_service`);
+    url.searchParams.set("alias", alias);
+    url.searchParams.set("feature_layer_query_url", feature_layer_query_url);
+    url.searchParams.set("vector_tile_base", vector_tile_base);
+    url.searchParams.set("allowed_out_fields", allowed_out_fields);
+
+    try{
+      const j = await fetchJson(url.toString(), { method: "POST", headers: adminHeaders() });
+      $("regStatus").textContent = "Registered ✅";
+      $("regStatus").className = "status ok";
+      log("Register OK: " + JSON.stringify(j));
+      $("testAlias").value = alias;
+    }catch(e){
+      $("regStatus").textContent = "Failed ❌ (see logs)";
+      $("regStatus").className = "status bad";
+      log("Register FAILED: " + JSON.stringify(e));
+      alert("Register failed. Check ADMIN_KEY and URLs. See Logs.");
+    }
+  }
+
+  async function createClientKey(){
+    $("clientStatus").textContent = "Creating…";
+    $("clientStatus").className = "status";
+
+    const name = $("clientName").value.trim();
+    const services = $("clientServices").value.trim();
+
+    const url = new URL(`${base()}/admin/create_client`);
+    url.searchParams.set("name", name);
+    url.searchParams.set("services", services);
+
+    try{
+      const j = await fetchJson(url.toString(), { method: "POST", headers: adminHeaders() });
+      $("clientStatus").textContent = "Client key created ✅";
+      $("clientStatus").className = "status ok";
+      const ck = j.client_key || j.key || "";
+      $("clientKeyOut").value = ck;
+      $("testClientKey").value = ck;
+      log("Create client OK: " + JSON.stringify(j));
+    }catch(e){
+      $("clientStatus").textContent = "Failed ❌ (see logs)";
+      $("clientStatus").className = "status bad";
+      log("Create client FAILED: " + JSON.stringify(e));
+      alert("Create client failed. Check ADMIN_KEY. See Logs.");
+    }
+  }
+
+  function styleUrl(alias, key){
+    return `${base()}/tiles/${alias}/style.json?key=${encodeURIComponent(key)}`;
+  }
+
+  function identifyUrl(alias, lat, lon, key){
+    return `${base()}/v1/${alias}/identify?lat=${lat}&lon=${lon}&key=${encodeURIComponent(key)}`;
+  }
+
+  function initEmptyMap(){
+    if(map) return;
+    map = new maplibregl.Map({
+      container: "map",
+      style: {
+        version: 8,
+        sources: {},
+        layers: [],
+      },
+      center: [8.67, 9.08],
+      zoom: 6
+    });
+    map.addControl(new maplibregl.NavigationControl(), "top-right");
+
+    map.on("click", async (e) => {
+      const alias = $("testAlias").value.trim();
+      const key = $("testClientKey").value.trim();
+      if(!alias || !key){
+        $("identifyLog").textContent = "Set Test Alias and Client Key, then Load Overlay.";
+        return;
+      }
+      $("identifyLog").textContent = "Loading…";
+      try{
+        const j = await fetchJson(identifyUrl(alias, e.lngLat.lat, e.lngLat.lng, key));
+        $("identifyLog").textContent = JSON.stringify(j, null, 2);
+      }catch(err){
+        $("identifyLog").textContent = JSON.stringify(err, null, 2);
+      }
+    });
+  }
+
+  async function loadOverlay(){
+    initEmptyMap();
+    const alias = $("testAlias").value.trim();
+    const key = $("testClientKey").value.trim();
+    if(!alias || !key){
+      alert("Please enter Test Alias and Client Key.");
+      return;
+    }
+
+    const sUrl = styleUrl(alias, key);
+    log("Loading style: " + sUrl);
+
+    try{
+      const style = await fetchJson(sUrl);
+      map.setStyle(style);
+      $("identifyLog").textContent = "Overlay loaded ✅ Now click on the map to identify attributes…";
+    }catch(e){
+      log("Load overlay failed: " + JSON.stringify(e));
+      $("identifyLog").textContent = "Failed to load overlay style.json. See Logs.";
+      alert("Failed to load overlay. Check alias/key and style.json URL.");
+    }
+  }
+
+  function openStyle(){
+    const alias = $("testAlias").value.trim();
+    const key = $("testClientKey").value.trim();
+    if(!alias || !key){ alert("Enter Test Alias and Client Key."); return; }
+    window.open(styleUrl(alias, key), "_blank");
+  }
+
+  function fly(){
+    initEmptyMap();
+    const parts = $("center").value.split(",").map(s => parseFloat(s.trim()));
+    const z = parseFloat($("zoom").value);
+    if(parts.length !== 2 || parts.some(Number.isNaN) || Number.isNaN(z)){
+      alert("Center must be 'lon,lat' and zoom must be a number.");
+      return;
+    }
+    map.flyTo({ center: [parts[0], parts[1]], zoom: z });
+  }
+
+  // Wire buttons
+  $("btnPing").addEventListener("click", async () => { await testAdminAccess(); });
+  $("btnList").addEventListener("click", listServices);
+  $("btnRegister").addEventListener("click", registerAlias);
+  $("btnCreateClient").addEventListener("click", createClientKey);
+  $("btnLoadStyle").addEventListener("click", loadOverlay);
+  $("btnOpenStyle").addEventListener("click", openStyle);
+  $("btnFly").addEventListener("click", fly);
+
+  // boot
+  initEmptyMap();
+  log("Admin portal loaded.");
+</script>
+</body>
+</html>
