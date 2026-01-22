@@ -213,6 +213,8 @@ def health():
 # -----------------------------
 # Simple Admin UI (so /admin-ui won't 404)
 # -----------------------------
+from fastapi.responses import HTMLResponse
+
 @app.get("/admin-ui", response_class=HTMLResponse)
 def admin_ui():
     return """
@@ -223,51 +225,101 @@ def admin_ui():
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>AGOL Proxy Admin UI</title>
   <style>
-    body{font-family:system-ui,Segoe UI,Arial;margin:24px;max-width:980px}
-    input,textarea{width:100%;padding:10px;margin:6px 0 14px;border:1px solid #ccc;border-radius:8px}
-    button{padding:10px 14px;border:0;border-radius:10px;cursor:pointer}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-    pre{background:#f6f6f6;padding:12px;border-radius:10px;overflow:auto}
+    body{font-family:system-ui,Segoe UI,Arial;margin:24px;max-width:1100px}
+    h2{margin:0 0 10px}
+    .hint{color:#444;margin:0 0 18px}
     .card{border:1px solid #e7e7e7;border-radius:14px;padding:16px;margin:16px 0}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    input{
+      flex:1; min-width:260px;
+      padding:10px 12px;border:1px solid #ccc;border-radius:10px
+    }
+    button{
+      padding:10px 14px;border:0;border-radius:10px;cursor:pointer;
+      background:#111;color:#fff
+    }
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .status{font-size:13px;color:#555;margin-top:8px}
+    pre{
+      background:#f6f6f6;padding:12px;border-radius:10px;
+      overflow:auto;
+      white-space:pre-wrap;      /* ✅ wrap lines */
+      word-break:break-word;     /* ✅ break long tokens */
+      line-height:1.35;
+      font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size:13px;
+      max-height:420px;
+    }
+    @media (max-width: 600px){
+      body{margin:14px}
+      button{width:100%}
+      input{min-width:100%}
+    }
   </style>
 </head>
 <body>
   <h2>AGOL Proxy Admin UI</h2>
-  <p>Use <b>ADMIN_KEY</b> as header <code>x-admin-key</code> or query <code>?admin_key=</code>.</p>
+  <p class="hint">Use <b>ADMIN_KEY</b> as header <code>x-admin-key</code> or query <code>?admin_key=</code>.</p>
 
   <div class="card">
     <h3>List Services</h3>
     <div class="row">
       <input id="adminKey1" placeholder="ADMIN_KEY"/>
-      <button onclick="listServices()">Fetch</button>
+      <button id="btn1" onclick="listServices()">Fetch</button>
     </div>
-    <pre id="out1"></pre>
+    <div class="status" id="st1"></div>
+    <pre id="out1">{}</pre>
   </div>
 
   <div class="card">
     <h3>List Clients</h3>
     <div class="row">
       <input id="adminKey2" placeholder="ADMIN_KEY"/>
-      <button onclick="listClients()">Fetch</button>
+      <button id="btn2" onclick="listClients()">Fetch</button>
     </div>
-    <pre id="out2"></pre>
+    <div class="status" id="st2"></div>
+    <pre id="out2">{}</pre>
   </div>
 
 <script>
+function setStatus(id, msg){ document.getElementById(id).textContent = msg; }
+
+async function fetchPretty(url, outId, statusId, btnId){
+  const btn = document.getElementById(btnId);
+  btn.disabled = true;
+  setStatus(statusId, "Loading...");
+  try{
+    const r = await fetch(url);
+    const ct = r.headers.get("content-type") || "";
+    let data;
+    if(ct.includes("application/json")){
+      data = await r.json();
+      document.getElementById(outId).textContent = JSON.stringify(data, null, 2); // ✅ pretty
+    } else {
+      const txt = await r.text();
+      document.getElementById(outId).textContent = txt;
+    }
+    setStatus(statusId, `HTTP ${r.status}`);
+  } catch(e){
+    setStatus(statusId, "Error: " + e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function listServices(){
   const k = document.getElementById("adminKey1").value.trim();
-  const r = await fetch(`/admin/services?admin_key=${encodeURIComponent(k)}`);
-  document.getElementById("out1").textContent = await r.text();
+  await fetchPretty(`/admin/services?admin_key=${encodeURIComponent(k)}`, "out1", "st1", "btn1");
 }
 async function listClients(){
   const k = document.getElementById("adminKey2").value.trim();
-  const r = await fetch(`/admin/clients?admin_key=${encodeURIComponent(k)}`);
-  document.getElementById("out2").textContent = await r.text();
+  await fetchPretty(`/admin/clients?admin_key=${encodeURIComponent(k)}`, "out2", "st2", "btn2");
 }
 </script>
 </body>
 </html>
 """
+
 
 
 # -----------------------------
