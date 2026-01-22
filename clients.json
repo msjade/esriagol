@@ -1,13 +1,13 @@
 {
   "clients": {
-    "CLIENTKEY_DEMO_123": {
+    "CK_demo_key_please_replace": {
       "name": "Demo Client",
-      "services": [
-        "ipa_bld_sample_v1",
-        "ipa_ea_frame_v1"
-      ],
+      "services": ["ea_frame", "buildings"],
       "disabled": false,
-      "where_lock": {}
+      "where_lock": {
+        "ea_frame": "1=1",
+        "buildings": "1=1"
+      }
     }
   }
 }
