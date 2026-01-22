@@ -3,7 +3,7 @@ from typing import Dict, Any, Optional, List
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Header, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 APP_TITLE = "AGOL Secure Overlay + Attributes Proxy"
@@ -202,12 +202,72 @@ app.add_middleware(
 
 @app.get("/")
 def home():
-    return {"ok": True, "message": "AGOL proxy running. Try /health"}
+    return {"ok": True, "message": "AGOL proxy running. Try /health or /admin-ui"}
 
 
 @app.get("/health")
 def health():
     return {"ok": True, "service": APP_TITLE}
+
+
+# -----------------------------
+# Simple Admin UI (so /admin-ui won't 404)
+# -----------------------------
+@app.get("/admin-ui", response_class=HTMLResponse)
+def admin_ui():
+    return """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>AGOL Proxy Admin UI</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Arial;margin:24px;max-width:980px}
+    input,textarea{width:100%;padding:10px;margin:6px 0 14px;border:1px solid #ccc;border-radius:8px}
+    button{padding:10px 14px;border:0;border-radius:10px;cursor:pointer}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    pre{background:#f6f6f6;padding:12px;border-radius:10px;overflow:auto}
+    .card{border:1px solid #e7e7e7;border-radius:14px;padding:16px;margin:16px 0}
+  </style>
+</head>
+<body>
+  <h2>AGOL Proxy Admin UI</h2>
+  <p>Use <b>ADMIN_KEY</b> as header <code>x-admin-key</code> or query <code>?admin_key=</code>.</p>
+
+  <div class="card">
+    <h3>List Services</h3>
+    <div class="row">
+      <input id="adminKey1" placeholder="ADMIN_KEY"/>
+      <button onclick="listServices()">Fetch</button>
+    </div>
+    <pre id="out1"></pre>
+  </div>
+
+  <div class="card">
+    <h3>List Clients</h3>
+    <div class="row">
+      <input id="adminKey2" placeholder="ADMIN_KEY"/>
+      <button onclick="listClients()">Fetch</button>
+    </div>
+    <pre id="out2"></pre>
+  </div>
+
+<script>
+async function listServices(){
+  const k = document.getElementById("adminKey1").value.trim();
+  const r = await fetch(`/admin/services?admin_key=${encodeURIComponent(k)}`);
+  document.getElementById("out1").textContent = await r.text();
+}
+async function listClients(){
+  const k = document.getElementById("adminKey2").value.trim();
+  const r = await fetch(`/admin/clients?admin_key=${encodeURIComponent(k)}`);
+  document.getElementById("out2").textContent = await r.text();
+}
+</script>
+</body>
+</html>
+"""
 
 
 # -----------------------------
@@ -394,20 +454,16 @@ async def identify_attributes_only(
     if not svc:
         raise HTTPException(404, "Unknown service alias")
 
-    allowed = svc.get("allowed_out_fields", [])
+    allowed: List[str] = svc.get("allowed_out_fields", [])
+    if not allowed:
+        raise HTTPException(500, "allowed_out_fields missing for service")
+
     qurl = svc["feature_layer_query_url"]
     token = await get_agol_token(cfg)
 
     where_final = apply_where_lock(client_rec, alias, "1=1")
 
-        # ✅ AGOL likes geometry as Esri JSON (more reliable than "x,y")
-    geometry_json = json.dumps({
-        "x": lon,
-        "y": lat,
-        "spatialReference": {"wkid": 4326}
-    })
-
-        # Use Esri JSON geometry (fine) OR keep x,y; either works with this approach
+    # ✅ AGOL likes geometry as Esri JSON
     geometry_json = json.dumps({
         "x": lon,
         "y": lat,
@@ -421,8 +477,8 @@ async def identify_attributes_only(
         "geometryType": "esriGeometryPoint",
         "inSR": "4326",
         "spatialRel": "esriSpatialRelIntersects",
-        "outFields": "*",                 # ✅ request all fields from AGOL
-        "returnGeometry": "false",        # ✅ still no geometry
+        "outFields": ",".join(allowed),      # ✅ request only allowed fields
+        "returnGeometry": "false",
         "resultRecordCount": str(max_results),
         "outSR": "4326",
         "token": token,
@@ -439,26 +495,10 @@ async def identify_attributes_only(
     cleaned = []
     for f in feats:
         attrs = (f.get("attributes") or {})
-        # ✅ filter attributes to allowed list (server-side)
         safe_attrs = {k: attrs.get(k) for k in allowed if k in attrs}
         cleaned.append({"attributes": safe_attrs})
 
     return {"count": len(cleaned), "results": cleaned}
-
-
-
-    async with httpx.AsyncClient(timeout=60) as client:
-        r = await client.get(qurl, params=params)
-        j = r.json()
-
-    if "error" in j:
-        return JSONResponse(status_code=400, content=j)
-
-    feats = j.get("features", [])
-    for f in feats:
-        f.pop("geometry", None)
-
-    return {"count": len(feats), "results": feats}
 
 
 # -----------------------------
@@ -489,10 +529,8 @@ async def vt_style(
         r = await client.get(style_url, params={"f": "json", "token": token})
         style = r.json()
 
-    # IMPORTANT: sprite URL cannot safely use ?key= because clients append .json/.png
     key_q = (key or x_api_key or "").strip()
 
-    # Rewrite sources: Esri styles may use "url": "../../" rather than "tiles"
     for src in style.get("sources", {}).values():
         if "url" in src:
             src.pop("url", None)
@@ -505,11 +543,9 @@ async def vt_style(
             src.setdefault("minzoom", 0)
             src.setdefault("maxzoom", 23)
 
-    # Rewrite sprite base (NO querystring here)
     if "sprite" in style:
         style["sprite"] = f"{PUBLIC_PROXY_BASE}/tiles/{alias}/sprite/{key_q}"
 
-    # Glyphs template is safe with querystring
     if "glyphs" in style:
         style["glyphs"] = f"{PUBLIC_PROXY_BASE}/tiles/{alias}/fonts/{{fontstack}}/{{range}}.pbf?key={key_q}"
 
@@ -549,10 +585,7 @@ async def vt_tile(
 
 # ---- Sprites (key is in PATH, because sprite url cannot use querystring reliably) ----
 @app.get("/tiles/{alias}/sprite/{client_key}.json")
-async def vt_sprite_json(
-    alias: str,
-    client_key: str,
-):
+async def vt_sprite_json(alias: str, client_key: str):
     enforce_access(alias=alias, x_api_key=None, key=client_key)
     cfg = load_services()
     svc = cfg.get("services", {}).get(alias)
@@ -571,10 +604,7 @@ async def vt_sprite_json(
 
 
 @app.get("/tiles/{alias}/sprite/{client_key}.png")
-async def vt_sprite_png(
-    alias: str,
-    client_key: str,
-):
+async def vt_sprite_png(alias: str, client_key: str):
     enforce_access(alias=alias, x_api_key=None, key=client_key)
     cfg = load_services()
     svc = cfg.get("services", {}).get(alias)
@@ -593,10 +623,7 @@ async def vt_sprite_png(
 
 
 @app.get("/tiles/{alias}/sprite/{client_key}@2x.json")
-async def vt_sprite2x_json(
-    alias: str,
-    client_key: str,
-):
+async def vt_sprite2x_json(alias: str, client_key: str):
     enforce_access(alias=alias, x_api_key=None, key=client_key)
     cfg = load_services()
     svc = cfg.get("services", {}).get(alias)
@@ -617,10 +644,7 @@ async def vt_sprite2x_json(
 
 
 @app.get("/tiles/{alias}/sprite/{client_key}@2x.png")
-async def vt_sprite2x_png(
-    alias: str,
-    client_key: str,
-):
+async def vt_sprite2x_png(alias: str, client_key: str):
     enforce_access(alias=alias, x_api_key=None, key=client_key)
     cfg = load_services()
     svc = cfg.get("services", {}).get(alias)
