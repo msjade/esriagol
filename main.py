@@ -215,110 +215,344 @@ def health():
 # -----------------------------
 from fastapi.responses import HTMLResponse
 
+from fastapi.responses import HTMLResponse
+
 @app.get("/admin-ui", response_class=HTMLResponse)
 def admin_ui():
-    return """
+    return r"""
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>AGOL Proxy Admin UI</title>
+  <title>AGOL Secure Proxy — Admin (OpenLayers)</title>
+
+  <!-- OpenLayers -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@9.2.4/ol.css">
+  <script src="https://cdn.jsdelivr.net/npm/ol@9.2.4/dist/ol.js"></script>
+
   <style>
-    body{font-family:system-ui,Segoe UI,Arial;margin:24px;max-width:1100px}
-    h2{margin:0 0 10px}
-    .hint{color:#444;margin:0 0 18px}
-    .card{border:1px solid #e7e7e7;border-radius:14px;padding:16px;margin:16px 0}
-    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
-    input{
-      flex:1; min-width:260px;
-      padding:10px 12px;border:1px solid #ccc;border-radius:10px
+    :root{
+      --bg:#070a12; --panel:rgba(15,23,42,.72); --line:rgba(148,163,184,.18);
+      --text:rgba(226,232,240,.92); --muted:rgba(148,163,184,.85);
+      --shadow:0 30px 80px rgba(0,0,0,.55); --r:18px;
+      --btn:rgba(30,41,59,.8); --btn2:rgba(2,6,23,.35);
     }
-    button{
-      padding:10px 14px;border:0;border-radius:10px;cursor:pointer;
-      background:#111;color:#fff
+    *{box-sizing:border-box}
+    body{
+      margin:0;height:100vh;overflow:hidden;color:var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      background: radial-gradient(1000px 600px at 70% -10%, rgba(59,130,246,.15), transparent 55%),
+                  radial-gradient(900px 500px at -10% 40%, rgba(34,197,94,.12), transparent 55%),
+                  var(--bg);
     }
-    button:disabled{opacity:.5;cursor:not-allowed}
-    .status{font-size:13px;color:#555;margin-top:8px}
+    .app{display:grid;grid-template-columns:420px 1fr;gap:14px;height:100vh;padding:14px}
+    .sidebar{display:flex;flex-direction:column;gap:12px;overflow:auto;padding-right:6px}
+    .card{
+      background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+      box-shadow:var(--shadow);padding:16px;backdrop-filter:blur(10px)
+    }
+    .title{font-size:20px;font-weight:700;margin:0 0 8px}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px}
+    .tabbtn{
+      padding:8px 12px;border-radius:999px;border:1px solid var(--line);
+      background:var(--btn2);color:var(--text);cursor:pointer;font-size:13px
+    }
+    .tabbtn.active{background:rgba(30,41,59,.95);border-color:rgba(148,163,184,.25)}
+    .section{display:none}.section.active{display:block}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    label{display:block;font-size:12px;color:var(--muted);margin:10px 0 6px}
+    input, textarea{
+      width:100%;padding:12px;border-radius:14px;border:1px solid rgba(148,163,184,.20);
+      background:rgba(2,6,23,.35);color:var(--text);outline:none
+    }
+    textarea{min-height:92px;resize:vertical}
+    .btn{
+      padding:12px 14px;border-radius:14px;border:1px solid rgba(148,163,184,.20);
+      background:var(--btn);color:var(--text);cursor:pointer;font-weight:600;min-width:160px
+    }
+    .btn.primary{background:rgba(59,130,246,.18)}
+    .btn.good{background:rgba(34,197,94,.14)}
+    .btn.full{width:100%}
     pre{
-      background:#f6f6f6;padding:12px;border-radius:10px;
-      overflow:auto;
-      white-space:pre-wrap;      /* ✅ wrap lines */
-      word-break:break-word;     /* ✅ break long tokens */
-      line-height:1.35;
-      font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      font-size:13px;
-      max-height:420px;
+      background:rgba(2,6,23,.45);border:1px solid rgba(148,163,184,.18);
+      border-radius:14px;padding:12px;margin:10px 0 0;overflow:auto;max-height:260px;
+      white-space:pre-wrap;word-break:break-word;font-size:12px
     }
-    @media (max-width: 600px){
-      body{margin:14px}
-      button{width:100%}
-      input{min-width:100%}
+    .main{
+      position:relative;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);
+      box-shadow:var(--shadow);background:rgba(2,6,23,.25)
     }
+    #map{position:absolute;inset:0}
+    .topbar{
+      position:absolute;left:18px;right:18px;top:14px;display:flex;gap:10px;align-items:center;
+      padding:10px;border-radius:999px;background:rgba(2,6,23,.45);
+      border:1px solid rgba(148,163,184,.18);backdrop-filter:blur(10px)
+    }
+    .pill{
+      display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:999px;
+      border:1px solid rgba(148,163,184,.16);background:rgba(15,23,42,.35);min-width:240px
+    }
+    .pill input{border:none;background:transparent;padding:0;width:100%}
+    .small{min-width:90px;width:90px;text-align:center}
+    .hint{font-size:12px;color:var(--muted);margin-top:6px}
   </style>
 </head>
 <body>
-  <h2>AGOL Proxy Admin UI</h2>
-  <p class="hint">Use <b>ADMIN_KEY</b> as header <code>x-admin-key</code> or query <code>?admin_key=</code>.</p>
+  <div class="app">
+    <div class="sidebar">
 
-  <div class="card">
-    <h3>List Services</h3>
-    <div class="row">
-      <input id="adminKey1" placeholder="ADMIN_KEY"/>
-      <button id="btn1" onclick="listServices()">Fetch</button>
-    </div>
-    <div class="status" id="st1"></div>
-    <pre id="out1">{}</pre>
-  </div>
+      <div class="card">
+        <div class="title">AGOL Secure Proxy — Admin (OpenLayers)</div>
+        <div class="tabs">
+          <button class="tabbtn active" onclick="showTab('tab-register', this)">Register Alias</button>
+          <button class="tabbtn" onclick="showTab('tab-client', this)">Create Client Key</button>
+          <button class="tabbtn" onclick="showTab('tab-test', this)">Test Overlay + Identify</button>
+        </div>
 
-  <div class="card">
-    <h3>List Clients</h3>
-    <div class="row">
-      <input id="adminKey2" placeholder="ADMIN_KEY"/>
-      <button id="btn2" onclick="listClients()">Fetch</button>
+        <label>Proxy Base URL</label>
+        <input id="proxyBase" placeholder="https://your-proxy.onrender.com" value=""/>
+
+        <label>Admin Key</label>
+        <input id="adminKey" type="password" placeholder="ADMIN_KEY"/>
+
+        <div class="row" style="margin-top:12px">
+          <button class="btn good" onclick="testAdmin()">Test Admin Access</button>
+          <button class="btn" onclick="listServices()">List Services</button>
+          <button class="btn" onclick="listClients()">List Clients</button>
+        </div>
+
+        <pre id="adminOut">{}</pre>
+      </div>
+
+      <div class="card section active" id="tab-register">
+        <div class="title">1) Register Service Alias</div>
+        <div class="hint">Admin-only. Adds FeatureServer query + VectorTileServer base.</div>
+
+        <label>Alias</label>
+        <input id="alias" value="ea_frame"/>
+
+        <label>Feature layer Query URL (ends with /query)</label>
+        <input id="flQueryUrl" placeholder="https://.../FeatureServer/0/query"/>
+
+        <label>Vector Tile Server Base (ends with /VectorTileServer)</label>
+        <input id="vtBase" placeholder="https://.../VectorTileServer"/>
+
+        <label>Allowed Out Fields (comma-separated)</label>
+        <textarea id="allowedFields" placeholder="OBJECTID,NAT_EA_SN,STATE_NAME,..."></textarea>
+
+        <div class="row" style="margin-top:12px">
+          <button class="btn primary full" onclick="registerAlias()">Register Alias</button>
+        </div>
+
+        <pre id="regOut">{}</pre>
+      </div>
+
+      <div class="card section" id="tab-client">
+        <div class="title">2) Create Client Key</div>
+
+        <label>Client Name</label>
+        <input id="clientName" placeholder="Client A"/>
+
+        <label>Allowed Services (comma-separated). Empty = all</label>
+        <input id="clientServices" placeholder="ea_frame,buildings"/>
+
+        <div class="row" style="margin-top:12px">
+          <button class="btn primary full" onclick="createClient()">Create Client Key</button>
+        </div>
+
+        <pre id="clientOut">{}</pre>
+      </div>
+
+      <div class="card section" id="tab-test">
+        <div class="title">3) Test Overlay + Identify</div>
+        <div class="hint">
+          OpenLayers loads your proxy tiles: <code>/tiles/{alias}/tile/{z}/{y}/{x}.pbf?key=...</code><br/>
+          Click map to call <code>/v1/{alias}/identify</code>.
+        </div>
+
+        <label>Service Alias</label>
+        <input id="testAlias" value="ea_frame"/>
+
+        <label>Client Key</label>
+        <input id="clientKey" placeholder="CK_..."/>
+
+        <div class="row" style="margin-top:12px">
+          <button class="btn good" onclick="loadOverlay()">Load Overlay</button>
+          <button class="btn" onclick="clearOverlay()">Clear Overlay</button>
+        </div>
+
+        <pre id="identifyOut">{}</pre>
+      </div>
+
     </div>
-    <div class="status" id="st2"></div>
-    <pre id="out2">{}</pre>
+
+    <div class="main">
+      <div id="map"></div>
+
+      <div class="topbar">
+        <div style="font-weight:700;opacity:.9;padding:0 8px">Map</div>
+        <div class="pill">
+          <input id="flyTo" value="8.67,9.08" title="lon,lat"/>
+        </div>
+        <div class="pill small">
+          <input id="flyZoom" class="small" value="6" title="zoom"/>
+        </div>
+        <button class="btn" style="min-width:120px" onclick="fly()">Fly</button>
+      </div>
+    </div>
   </div>
 
 <script>
-function setStatus(id, msg){ document.getElementById(id).textContent = msg; }
-
-async function fetchPretty(url, outId, statusId, btnId){
-  const btn = document.getElementById(btnId);
-  btn.disabled = true;
-  setStatus(statusId, "Loading...");
-  try{
-    const r = await fetch(url);
-    const ct = r.headers.get("content-type") || "";
-    let data;
-    if(ct.includes("application/json")){
-      data = await r.json();
-      document.getElementById(outId).textContent = JSON.stringify(data, null, 2); // ✅ pretty
-    } else {
-      const txt = await r.text();
-      document.getElementById(outId).textContent = txt;
-    }
-    setStatus(statusId, `HTTP ${r.status}`);
-  } catch(e){
-    setStatus(statusId, "Error: " + e);
-  } finally {
-    btn.disabled = false;
+  function showTab(id, el){
+    document.querySelectorAll(".section").forEach(s => s.classList.remove("active"));
+    document.getElementById(id).classList.add("active");
+    document.querySelectorAll(".tabbtn").forEach(b => b.classList.remove("active"));
+    el.classList.add("active");
   }
-}
 
-async function listServices(){
-  const k = document.getElementById("adminKey1").value.trim();
-  await fetchPretty(`/admin/services?admin_key=${encodeURIComponent(k)}`, "out1", "st1", "btn1");
-}
-async function listClients(){
-  const k = document.getElementById("adminKey2").value.trim();
-  await fetchPretty(`/admin/clients?admin_key=${encodeURIComponent(k)}`, "out2", "st2", "btn2");
-}
+  function base(){
+    const b = (document.getElementById("proxyBase").value || "").trim().replace(/\/+$/,"");
+    return b || window.location.origin;
+  }
+  function adminKey(){ return (document.getElementById("adminKey").value || "").trim(); }
+
+  async function fetchJson(url, opts={}){
+    const r = await fetch(url, opts);
+    const ct = r.headers.get("content-type") || "";
+    const txt = await r.text();
+    let data = null;
+    try { data = ct.includes("application/json") ? JSON.parse(txt) : txt; } catch(e){ data = txt; }
+    return { ok: r.ok, status: r.status, data };
+  }
+
+  async function testAdmin(){
+    const url = `${base()}/admin/services?admin_key=${encodeURIComponent(adminKey())}`;
+    const res = await fetchJson(url);
+    document.getElementById("adminOut").textContent = JSON.stringify(res.data, null, 2);
+  }
+  async function listServices(){ return testAdmin(); }
+  async function listClients(){
+    const url = `${base()}/admin/clients?admin_key=${encodeURIComponent(adminKey())}`;
+    const res = await fetchJson(url);
+    document.getElementById("adminOut").textContent = JSON.stringify(res.data, null, 2);
+  }
+
+  async function registerAlias(){
+    const params = new URLSearchParams({
+      admin_key: adminKey(),
+      alias: document.getElementById("alias").value.trim(),
+      feature_layer_query_url: document.getElementById("flQueryUrl").value.trim(),
+      vector_tile_base: document.getElementById("vtBase").value.trim(),
+      allowed_out_fields: document.getElementById("allowedFields").value.trim()
+    });
+    const url = `${base()}/admin/register_service?${params.toString()}`;
+    const res = await fetchJson(url, { method: "POST" });
+    document.getElementById("regOut").textContent = JSON.stringify(res.data, null, 2);
+  }
+
+  async function createClient(){
+    const params = new URLSearchParams({
+      admin_key: adminKey(),
+      name: document.getElementById("clientName").value.trim(),
+      services: document.getElementById("clientServices").value.trim(),
+      disabled: "false"
+    });
+    const url = `${base()}/admin/create_client?${params.toString()}`;
+    const res = await fetchJson(url, { method: "POST" });
+    document.getElementById("clientOut").textContent = JSON.stringify(res.data, null, 2);
+    if(res.data && res.data.client_key){
+      document.getElementById("clientKey").value = res.data.client_key;
+    }
+  }
+
+  // ---------- OpenLayers Map ----------
+  const olProj = ol.proj;
+  const map = new ol.Map({
+    target: 'map',
+    layers: [
+      new ol.layer.Tile({ source: new ol.source.OSM() })
+    ],
+    view: new ol.View({
+      center: olProj.fromLonLat([8.67, 9.08]),
+      zoom: 6
+    })
+  });
+
+  let vtLayer = null;
+
+  function fly(){
+    const txt = document.getElementById("flyTo").value.trim();
+    const z = parseFloat(document.getElementById("flyZoom").value || "6");
+    const parts = txt.split(",").map(s => parseFloat(s.trim()));
+    if(parts.length !== 2 || parts.some(n => Number.isNaN(n))) return;
+    map.getView().animate({ center: olProj.fromLonLat([parts[0], parts[1]]), zoom: z, duration: 600 });
+  }
+
+  // Simple default style for all vector tile features
+  const defaultStyle = new ol.style.Style({
+    stroke: new ol.style.Stroke({ width: 1.5 }),
+    fill: new ol.style.Fill({ color: 'rgba(255,255,255,0.08)' })
+  });
+
+  async function loadOverlay(){
+    const alias = document.getElementById("testAlias").value.trim();
+    const key = document.getElementById("clientKey").value.trim();
+    if(!alias || !key){
+      document.getElementById("identifyOut").textContent = "Set Service Alias and Client Key first.";
+      return;
+    }
+
+    // IMPORTANT: OpenLayers XYZ uses {z}/{x}/{y} by default.
+    // Your endpoint is /tile/{z}/{y}/{x}.pbf, so we must swap x/y in the template.
+    const url = `${base()}/tiles/${encodeURIComponent(alias)}/tile/{z}/{y}/{x}.pbf?key=${encodeURIComponent(key)}`;
+
+    if(vtLayer){
+      map.removeLayer(vtLayer);
+      vtLayer = null;
+    }
+
+    vtLayer = new ol.layer.VectorTile({
+      source: new ol.source.VectorTile({
+        format: new ol.format.MVT(),
+        url: url
+      }),
+      style: defaultStyle
+    });
+
+    map.addLayer(vtLayer);
+
+    document.getElementById("identifyOut").textContent =
+      JSON.stringify({ ok:true, message:"Overlay loaded (OpenLayers MVT)", tileUrlTemplate:url }, null, 2);
+  }
+
+  function clearOverlay(){
+    if(vtLayer){
+      map.removeLayer(vtLayer);
+      vtLayer = null;
+    }
+    document.getElementById("identifyOut").textContent = "{}";
+  }
+
+  // Identify on click (calls your FastAPI /v1/{alias}/identify)
+  map.on('singleclick', async (evt) => {
+    const alias = document.getElementById("testAlias").value.trim();
+    const key = document.getElementById("clientKey").value.trim();
+    if(!vtLayer || !alias || !key) return;
+
+    const [lon, lat] = olProj.toLonLat(evt.coordinate);
+
+    const url = `${base()}/v1/${encodeURIComponent(alias)}/identify?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&max_results=5&key=${encodeURIComponent(key)}`;
+    const res = await fetchJson(url);
+
+    document.getElementById("identifyOut").textContent =
+      JSON.stringify({ click:{lat, lon}, http: res.status, data: res.data }, null, 2);
+  });
 </script>
 </body>
 </html>
 """
+
 
 
 
